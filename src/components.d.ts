@@ -32,6 +32,39 @@ import {
 declare global {
 
   namespace StencilComponents {
+    interface AppBoard {
+
+    }
+  }
+
+  interface HTMLAppBoardElement extends StencilComponents.AppBoard, HTMLStencilElement {}
+
+  var HTMLAppBoardElement: {
+    prototype: HTMLAppBoardElement;
+    new (): HTMLAppBoardElement;
+  };
+  interface HTMLElementTagNameMap {
+    'app-board': HTMLAppBoardElement;
+  }
+  interface ElementTagNameMap {
+    'app-board': HTMLAppBoardElement;
+  }
+  namespace JSX {
+    interface IntrinsicElements {
+      'app-board': JSXElements.AppBoardAttributes;
+    }
+  }
+  namespace JSXElements {
+    export interface AppBoardAttributes extends HTMLAttributes {
+
+    }
+  }
+}
+
+
+declare global {
+
+  namespace StencilComponents {
     interface AppHome {
 
     }

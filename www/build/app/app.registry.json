@@ -6,6 +6,9 @@
   "global": "app.global.js",
   "core": "app.core.js",
   "components": {
+    "app-board": {
+      "$": "app-board"
+    },
     "app-home": {
       "$": "app-home"
     },
@@ -13,7 +16,7 @@
       "$": "app-profile"
     },
     "app-square": {
-      "$": "app-square"
+      "$": "app-board"
     },
     "my-app": {
       "$": "my-app"

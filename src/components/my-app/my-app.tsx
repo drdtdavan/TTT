@@ -13,7 +13,7 @@ export class MyApp {
        
         <main>
           <stencil-router>
-            <stencil-route url='/' component='app-square' exact={true}>
+            <stencil-route url='/' component='app-board' exact={true}>
             </stencil-route>
           </stencil-router>
         </main>

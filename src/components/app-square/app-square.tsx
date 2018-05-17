@@ -9,7 +9,7 @@ export class AppSquare {
 
   render() {
     return (
-     <button></button>
+     <button>x</button>
     );
   }
 }
