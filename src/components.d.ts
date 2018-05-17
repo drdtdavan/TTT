@@ -98,6 +98,39 @@ declare global {
 declare global {
 
   namespace StencilComponents {
+    interface AppSquare {
+
+    }
+  }
+
+  interface HTMLAppSquareElement extends StencilComponents.AppSquare, HTMLStencilElement {}
+
+  var HTMLAppSquareElement: {
+    prototype: HTMLAppSquareElement;
+    new (): HTMLAppSquareElement;
+  };
+  interface HTMLElementTagNameMap {
+    'app-square': HTMLAppSquareElement;
+  }
+  interface ElementTagNameMap {
+    'app-square': HTMLAppSquareElement;
+  }
+  namespace JSX {
+    interface IntrinsicElements {
+      'app-square': JSXElements.AppSquareAttributes;
+    }
+  }
+  namespace JSXElements {
+    export interface AppSquareAttributes extends HTMLAttributes {
+
+    }
+  }
+}
+
+
+declare global {
+
+  namespace StencilComponents {
     interface MyApp {
 
     }

@@ -12,6 +12,9 @@
     "app-profile": {
       "$": "app-profile"
     },
+    "app-square": {
+      "$": "app-square"
+    },
     "my-app": {
       "$": "my-app"
     },

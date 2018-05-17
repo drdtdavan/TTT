@@ -1,0 +1,12 @@
+button{
+  background-color: black; 
+  width:20em;
+  height:20em;  
+  border-style: solid; 
+  border-color:black;
+  border-width: 5px;
+}
+
+button:hover{
+  border-color:yellow;
+}
