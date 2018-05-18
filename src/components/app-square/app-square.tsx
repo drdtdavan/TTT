@@ -1,4 +1,5 @@
-import { Component } from '@stencil/core';
+import { Component, Prop, Event } from '@stencil/core';
+import { EventEmitter } from 'events';
 
 
 @Component({
@@ -6,10 +7,15 @@ import { Component } from '@stencil/core';
   styleUrl: 'app-square.css'
 })
 export class AppSquare {
-
+  btnClicked(){
+   this.clicked.emit(this.val)
+  }
+@Prop()val:string;
+@Prop()XO:string;
+@Event()clicked:EventEmitter;
   render() {
     return (
-     <button>x</button>
+     <button onClick={()=>this.btnClicked()}>{this.XO}</button>
     );
   }
 }

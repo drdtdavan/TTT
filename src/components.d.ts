@@ -132,7 +132,8 @@ declare global {
 
   namespace StencilComponents {
     interface AppSquare {
-
+      'XO': string;
+      'val': string;
     }
   }
 
@@ -155,7 +156,9 @@ declare global {
   }
   namespace JSXElements {
     export interface AppSquareAttributes extends HTMLAttributes {
-
+      'XO'?: string;
+      'onClicked'?: (event: CustomEvent) => void;
+      'val'?: string;
     }
   }
 }

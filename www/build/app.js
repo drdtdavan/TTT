@@ -1,7 +1,7 @@
 /*! Built with http://stenciljs.com */
 (function(win, doc, namespace, fsNamespace, resourcesUrl, appCore, appCoreSsr, appCorePolyfilled, hydratedCssClass, components) {
 
-    function init(win, doc, namespace, fsNamespace, resourcesUrl, appCore, appCorePolyfilled, hydratedCssClass, components, HTMLElementPrototype, App, x, y, scriptElm, orgComponentOnReady) {
+  function init(win, doc, namespace, fsNamespace, resourcesUrl, appCore, appCorePolyfilled, hydratedCssClass, components, HTMLElementPrototype, App, x, y, scriptElm) {
     // create global namespace if it doesn't already exist
     App = win[namespace] = win[namespace] || {};
     App.components = components;
@@ -14,42 +14,7 @@
         x.setAttribute('data-styles', '');
         doc.head.insertBefore(x, doc.head.firstChild);
     }
-    // create a temporary array to store the resolves
-    // before the core file has fully loaded
-    App.$r = [];
-    // add componentOnReady to HTMLElement.prototype
-    orgComponentOnReady = HTMLElementPrototype.componentOnReady;
-    HTMLElementPrototype.componentOnReady = function componentOnReady(cb) {
-        const elm = this;
-        // there may be more than one app on the window so
-        // call original HTMLElement.prototype.componentOnReady
-        // if one exists already
-        orgComponentOnReady && orgComponentOnReady.call(elm);
-        function executor(resolve) {
-            if (App.$r) {
-                // core file hasn't loaded yet
-                // so let's throw it in this temporary queue
-                // and when the core does load it'll handle these
-                App.$r.push([elm, resolve]);
-            }
-            else {
-                // core has finished loading because there's no temporary queue
-                // call the core's logic to handle this
-                App.componentOnReady(elm, resolve);
-            }
-        }
-        if (cb) {
-            // just a callback
-            return executor(cb);
-        }
-        // callback wasn't provided, let's return a promise
-        if (win.Promise) {
-            // use native/polyfilled promise
-            return new Promise(executor);
-        }
-        // promise may not have been polyfilled yet
-        return { then: executor };
-    };
+    createComponentOnReadyPrototype(win, HTMLElementPrototype, App);
     // figure out the script element for this current script
     y = doc.querySelectorAll('script');
     for (x = y.length - 1; x >= 0; x--) {
@@ -116,8 +81,46 @@ function doesNotSupportsDynamicImports(dynamicImportTest) {
     catch (e) { }
     return true;
 }
+function createComponentOnReadyPrototype(win, HTMLElementPrototype, App) {
+    // create a temporary array to store the resolves
+    // before the core file has fully loaded
+    App.$r = [];
+    // add componentOnReady to HTMLElement.prototype
+    const orgComponentOnReady = HTMLElementPrototype.componentOnReady;
+    HTMLElementPrototype.componentOnReady = function componentOnReady(cb) {
+        const elm = this;
+        // there may be more than one app on the window so
+        // call original HTMLElement.prototype.componentOnReady
+        // if one exists already
+        orgComponentOnReady && orgComponentOnReady.call(elm);
+        function executor(resolve) {
+            if (App.$r) {
+                // core file hasn't loaded yet
+                // so let's throw it in this temporary queue
+                // and when the core does load it'll handle these
+                App.$r.push([elm, resolve]);
+            }
+            else {
+                // core has finished loading because there's no temporary queue
+                // call the core's logic to handle this
+                App.componentOnReady(elm, resolve);
+            }
+        }
+        if (cb) {
+            // just a callback
+            return executor(cb);
+        }
+        // callback wasn't provided, let's return a promise
+        if (win.Promise) {
+            // use native/polyfilled promise
+            return new Promise(executor);
+        }
+        // promise may not have been polyfilled yet
+        return { then: executor };
+    };
+}
 
 
-    init(win, doc, namespace, fsNamespace, resourcesUrl, appCore, appCoreSsr, appCorePolyfilled, hydratedCssClass, components);
+  init(win, doc, namespace, fsNamespace, resourcesUrl, appCore, appCoreSsr, appCorePolyfilled, hydratedCssClass, components);
 
-    })(window, document, "App","app",0,"app.core.js","es5-build-disabled.js","hydrated",[["app-board","app-board"],["app-home","app-home",1],["app-profile","app-profile",1,[["match",1]]],["app-square","app-board",1],["my-app","my-app",1],["stencil-route","my-app",0,[["activeInGroup",5],["activeRouter",3,0,0,0,"activeRouter"],["component",1,0,1,2],["componentProps",1],["el",7],["exact",1,0,1,3],["group",1,0,1,2],["groupIndex",1,0,"group-index",4],["isServer",3,0,0,0,"isServer"],["location",3,0,0,0,"location"],["match",5],["queue",3,0,0,0,"queue"],["routeRender",1],["scrollTopOffset",1,0,"scroll-top-offset",4],["url",1,0,1,2]]],["stencil-router","my-app",0,[["activeRouter",3,0,0,0,"activeRouter"],["historyType",1,0,"history-type",2],["match",5],["root",1,0,1,2],["titleSuffix",1,0,"title-suffix",2]]]],HTMLElement.prototype);
+  })(window, document, "App","app",0,"app.core.js","es5-build-disabled.js","hydrated",[["app-board","app-board",0,[["board",5]],0,[["clicked","clickedHandler"]]],["app-home","app-home",1],["app-profile","app-profile",1,[["match",1]]],["app-square","app-board",1,[["XO",1,0,"x-o",2],["val",1,0,1,2]]],["my-app","my-app",1],["stencil-route","my-app",0,[["activeInGroup",5],["activeRouter",3,0,0,0,"activeRouter"],["component",1,0,1,2],["componentProps",1],["el",7],["exact",1,0,1,3],["group",1,0,1,2],["groupIndex",1,0,"group-index",4],["isServer",3,0,0,0,"isServer"],["location",3,0,0,0,"location"],["match",5],["queue",3,0,0,0,"queue"],["routeRender",1],["scrollTopOffset",1,0,"scroll-top-offset",4],["url",1,0,1,2]]],["stencil-router","my-app",0,[["activeRouter",3,0,0,0,"activeRouter"],["historyType",1,0,"history-type",2],["match",5],["root",1,0,1,2],["titleSuffix",1,0,"title-suffix",2]]]],HTMLElement.prototype);

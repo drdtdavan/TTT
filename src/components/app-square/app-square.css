@@ -1,10 +1,15 @@
 button{
+  color:white;
   background-color: black; 
-  width:20em;
-  height:20em;  
+  width:100px;
+  height:100px;  
+  font-size: 50px;
   border-style: solid; 
   border-color:white;
-  border-width: 5px;
+  border-width: 1px;
+  padding: 0px;
+  margin: 0px;
+box-sizing: border-box;
 }
 
 button:hover{

@@ -315,7 +315,8 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       $childNodes: node => node.childNodes,
       $parentNode: node => node.parentNode,
       $nextSibling: node => node.nextSibling,
-      $tagName: elm => toLowerCase(elm.tagName),
+      $previousSibling: node => node.previousSibling,
+      $tagName: elm => toLowerCase(elm.nodeName),
       $getTextContent: node => node.textContent,
       $setTextContent: (node, text) => node.textContent = text,
       $getAttribute: (elm, key) => elm.getAttribute(key),
@@ -424,39 +425,24 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     false;
     false;
     domApi.$dispatchEvent = ((elm, eventName, data) => elm && elm.dispatchEvent(new win.CustomEvent(eventName, data)));
-    false, false;
-    domApi.$parentElement = ((elm, parentNode) => {
-      // if the parent node is a document fragment (shadow root)
-      // then use the "host" property on it
-      // otherwise use the parent node
-      parentNode = domApi.$parentNode(elm);
-      return parentNode && 11 /* DocumentFragment */ === domApi.$nodeType(parentNode) ? parentNode.host : parentNode;
-    });
+    true;
+    // test if this browser supports event options or not
+    try {
+      win.addEventListener('e', null, Object.defineProperty({}, 'passive', {
+        get: () => domApi.$supportsEventOptions = true
+      }));
+    } catch (e) {}
+    domApi.$parentElement = ((elm, parentNode) => 
+    // if the parent node is a document fragment (shadow root)
+    // then use the "host" property on it
+    // otherwise use the parent node
+    (parentNode = domApi.$parentNode(elm)) && 11 /* DocumentFragment */ === domApi.$nodeType(parentNode) ? parentNode.host : parentNode);
     return domApi;
   }
-  function loadHostContent(domApi, contentRef, contentSlots, node, childNodes, i, slotName) {
-    node = contentRef && domApi.$parentNode(contentRef);
-    if (node) {
-      childNodes = domApi.$childNodes(node);
-      for (i = 0; i < childNodes.length; i++) {
-        node = childNodes[i];
-        1 /* ElementNode */ === domApi.$nodeType(node) && isDef(slotName = domApi.$getAttribute(node, 'slot')) ? 
-        // is element node
-        // this element has a slot name attribute
-        // so this element will end up getting relocated into
-        // the component's named slot once it renders
-        contentSlots[slotName] ? contentSlots[slotName].push(node) : contentSlots[slotName] = [ node ] : 
-        // this is a text node
-        // or it's an element node that doesn't have a slot attribute
-        // let's add this node to our collection for the default slot
-        contentSlots.$defaultSlot ? contentSlots.$defaultSlot.push(node) : contentSlots.$defaultSlot = [ node ];
-      }
-    }
-  }
-  function parseComponentLoader(cmpRegistryData, cmpRegistry, i, d) {
+  function parseComponentLoader(cmpData, i, d) {
     // tag name will always be lower case
     const cmpMeta = {
-      tagNameMeta: cmpRegistryData[0],
+      tagNameMeta: cmpData[0],
       membersMeta: {
         // every component defaults to always have
         // the mode and color properties
@@ -468,28 +454,28 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     };
     // map of the bundle ids
     // can contain modes, and array of esm and es5 bundle ids
-        cmpMeta.bundleIds = cmpRegistryData[1];
+        cmpMeta.bundleIds = cmpData[1];
     // parse member meta
     // this data only includes props that are attributes that need to be observed
     // it does not include all of the props yet
-        const memberData = cmpRegistryData[3];
+        const memberData = cmpData[3];
     if (memberData) {
       for (i = 0; i < memberData.length; i++) {
         d = memberData[i];
         cmpMeta.membersMeta[d[0]] = {
           memberType: d[1],
-          reflectToAttr: !!d[2],
+          reflectToAttrib: !!d[2],
           attribName: 'string' === typeof d[3] ? d[3] : d[3] ? d[0] : 0,
           propType: d[4]
         };
       }
     }
     // encapsulation
-        cmpMeta.encapsulation = cmpRegistryData[4];
-    cmpRegistryData[5] && (
+        cmpMeta.encapsulation = cmpData[4];
+    cmpData[5] && (
     // parse listener meta
-    cmpMeta.listenersMeta = cmpRegistryData[5].map(parseListenerData));
-    return cmpRegistry[cmpMeta.tagNameMeta] = cmpMeta;
+    cmpMeta.listenersMeta = cmpData[5].map(parseListenerData));
+    return cmpMeta;
   }
   function parseListenerData(listenerData) {
     return {
@@ -506,7 +492,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     // we could have either gotten the data from the attribute changed callback,
     // which wouldn't have Constructor data yet, and because this method is reused
     // within proxy where we don't have meta data, but only constructor data
-    if (isDef(propValue)) {
+    if (isDef(propValue) && 'object' !== typeof propValue && 'function' !== typeof propValue) {
       if (propType === Boolean || 3 /* Boolean */ === propType) {
         // per the HTML spec, any string value means it is a boolean true value
         // but we'll cheat here and say that the string "false" is the boolean false
@@ -516,10 +502,32 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         // force it to be a number
         return parseFloat(propValue);
       }
+      if (propType === String || 2 /* String */ === propType) {
+        // could have been passed as a number or boolean
+        // but we still want it as a string
+        return propValue.toString();
+      }
     }
     // not sure exactly what type we want
     // so no need to change to a different type
         return propValue;
+  }
+  function initEventEmitters(plt, cmpEvents, instance) {
+    if (cmpEvents) {
+      const elm = plt.hostElementMap.get(instance);
+      cmpEvents.forEach(eventMeta => {
+        instance[eventMeta.method] = {
+          emit: data => {
+            plt.emitEvent(elm, eventMeta.name, {
+              bubbles: eventMeta.bubbles,
+              composed: eventMeta.composed,
+              cancelable: eventMeta.cancelable,
+              detail: data
+            });
+          }
+        };
+      });
+    }
   }
   function proxyComponentInstance(plt, cmpConstructor, elm, instance, hostSnapshot, properties, memberName) {
     // at this point we've got a specific node of a host element, and created a component class instance
@@ -557,8 +565,32 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       // let's upgrade the data on the host element
       // and let the getters/setters do their jobs
             proxyComponentInstance(plt, componentConstructor, elm, instance, hostSnapshot);
-      false;
-      false;
+      true;
+      // add each of the event emitters which wire up instance methods
+      // to fire off dom events from the host element
+      initEventEmitters(plt, componentConstructor.events, instance);
+      true;
+      try {
+        // replay any event listeners on the instance that
+        // were queued up between the time the element was
+        // connected and before the instance was ready
+        queuedEvents = plt.queuedEvents.get(elm);
+        if (queuedEvents) {
+          // events may have already fired before the instance was even ready
+          // now that the instance is ready, let's replay all of the events that
+          // we queued up earlier that were originally meant for the instance
+          for (i = 0; i < queuedEvents.length; i += 2) {
+            // data was added in sets of two
+            // first item the eventMethodName
+            // second item is the event data
+            // take a look at initElementListener()
+            instance[queuedEvents[i]](queuedEvents[i + 1]);
+          }
+          plt.queuedEvents.delete(elm);
+        }
+      } catch (e) {
+        plt.onError(e, 2 /* QueueEventsError */ , elm);
+      }
     } catch (e) {
       // something done went wrong trying to create a component instance
       // create a dumby instance so other stuff can load
@@ -570,6 +602,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     return instance;
   }
   function initComponentLoaded(plt, elm, hydratedCssClass, instance, onReadyCallbacks) {
+    false;
     // all is good, this component has been told it's time to finish loading
     // it's possible that we've already decided to destroy this element
     // check if this element has any actively loading child elements
@@ -670,6 +703,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       }
     }
     let vkey;
+    let vname;
     if (null != vnodeData) {
       // normalize class / classname attributes
       vnodeData.className && (vnodeData.class = vnodeData.className);
@@ -681,12 +715,13 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         stack.length = 0;
       }
       null != vnodeData.key && (vkey = vnodeData.key);
+      null != vnodeData.name && (vname = vnodeData.name);
     }
     if ('function' === typeof nodeName) {
       // nodeName is a functional component
       return nodeName(Object.assign({}, vnodeData, {
         children: children
-      }));
+      }), utils);
     }
     return {
       vtag: nodeName,
@@ -694,10 +729,15 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       vtext: void 0,
       vattrs: vnodeData,
       vkey: vkey,
+      vname: vname,
       elm: void 0,
       ishost: false
     };
   }
+  const utils = {
+    'getAttributes': vnode => vnode.vattrs,
+    'replaceAttributes': (vnode, attributes) => vnode.vattrs = attributes
+  };
   function render(plt, cmpMeta, elm, instance, isUpdateRender) {
     try {
       // if this component has a render function, let's fire
@@ -888,7 +928,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
           // @Prop or @Prop({mutable:true})
           // property values on the host element should override
           // any default values on the component instance
-          void 0 === values[memberName] && (values[memberName] = elm[memberName]);
+          void 0 === values[memberName] && (values[memberName] = parsePropertyValue(property.type, elm[memberName]));
           // for the client only, let's delete its "own" property
           // this way our already assigned getter/setter on the prototype kicks in
                     delete elm[memberName];
@@ -973,16 +1013,14 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     });
   }
   const WATCH_CB_PREFIX = 'wc-';
-  function updateAttribute(elm, memberName, newValue) {
+  function updateAttribute(elm, memberName, newValue, isBoolean, forceRemove) {
     const isXlinkNs = memberName !== (memberName = memberName.replace(/^xlink\:?/, ''));
-    const isBooleanAttr = BOOLEAN_ATTRS[memberName];
-    if (!isBooleanAttr || newValue && 'false' !== newValue) {
-      if ('function' !== typeof newValue) {
-        isBooleanAttr && (newValue = '');
-        isXlinkNs ? elm.setAttributeNS(XLINK_NS$1, toLowerCase(memberName), newValue) : elm.setAttribute(memberName, newValue);
-      }
-    } else {
+    const isBooleanAttr = BOOLEAN_ATTRS[memberName] || isBoolean;
+    if (isBooleanAttr && (!newValue || 'false' === newValue) || forceRemove) {
       isXlinkNs ? elm.removeAttributeNS(XLINK_NS$1, toLowerCase(memberName)) : elm.removeAttribute(memberName);
+    } else if ('function' !== typeof newValue) {
+      isBooleanAttr && (newValue = '');
+      isXlinkNs ? elm.setAttributeNS(XLINK_NS$1, toLowerCase(memberName), newValue) : elm.setAttribute(memberName, newValue);
     }
   }
   const BOOLEAN_ATTRS = {
@@ -1004,7 +1042,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     'spellcheck': 1
   };
   const XLINK_NS$1 = 'http://www.w3.org/1999/xlink';
-  function setAccessor(plt, elm, memberName, oldValue, newValue, isSvg, isHostElement, i, ilen) {
+  function setAccessor(plt, elm, memberName, oldValue, newValue, isSvg, isHostElement, i, ilen, cmpMeta) {
     if ('class' !== memberName || isSvg) {
       if ('style' === memberName) {
         // Style
@@ -1022,7 +1060,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
           // - list and type are attributes that get applied as values on the element
           // - all svgs get values as attributes not props
           // - check if elm contains name or if the value is array, object, or function
-          const cmpMeta = plt.getComponentMeta(elm);
+          cmpMeta = plt.getComponentMeta(elm);
           if (cmpMeta && cmpMeta.membersMeta && cmpMeta.membersMeta[memberName]) {
             // we know for a fact that this element is a known component
             // and this component has this member name as a property,
@@ -1042,7 +1080,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
           // Element Attributes
           updateAttribute(elm, memberName, newValue) : !isSvg || null != newValue && false !== newValue || 
           // remove svg attribute
-          elm.removeAttribute(memberName);
+          plt.domApi.$removeAttribute(elm, memberName);
         }
       } else {
         // Event Handlers
@@ -1104,61 +1142,48 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     // createRenderer() is only created once per app
     // the patch() function which createRenderer() returned is the function
     // which gets called numerous times by each component
-    function createElm(vnode, parentElm, childIndex, i, elm, childNode, namedSlot, slotNodes, hasLightDom) {
-      if ((true, !useNativeShadowDom) && 'slot' === vnode.vtag) {
-        if (Object.keys(contentSlots).length) {
-          scopeId && domApi.$setAttribute(parentElm, scopeId + '-slot', '');
-          // special case for manually relocating host content nodes
-          // to their new home in either a named slot or the default slot
-                    // this vnode is a named slot
-          slotNodes = isDef(namedSlot = vnode.vattrs && vnode.vattrs.name) ? contentSlots[namedSlot] : contentSlots.$defaultSlot;
-          if (isDef(slotNodes)) {
-            // the host element has some nodes that need to be moved around
-            // we have a slot for the user's vnode to go into
-            // while we're moving nodes around, temporarily disable
-            // the disconnectCallback from working
-            plt.tmpDisconnected = true;
-            for (i = 0; i < slotNodes.length; i++) {
-              childNode = slotNodes[i];
-              // remove the host content node from it's original parent node
-              // then relocate the host content node to its new slotted home
-                            domApi.$remove(childNode);
-              domApi.$appendChild(parentElm, childNode);
-              8 /* CommentNode */ !== childNode.nodeType && (hasLightDom = true);
-            }
-            !hasLightDom && vnode.vchildren && 
-            // the user did not provide light-dom content
-            // and this vnode does come with it's own default content
-            updateChildren(parentElm, [], vnode.vchildren);
-            // done moving nodes around
-            // allow the disconnect callback to work again
-                        plt.tmpDisconnected = false;
-          }
+    function createElm(oldParentVNode, newParentVNode, childIndex, parentElm, i, elm, childNode, newVNode, oldVNode) {
+      newVNode = newParentVNode.vchildren[childIndex];
+      if (true, !useNativeShadowDom) {
+        // remember for later we need to check to relocate nodes
+        checkSlotRelocate = true;
+        if ('slot' === newVNode.vtag) {
+          scopeId && 
+          // scoped css needs to add its scoped id to the parent element
+          domApi.$setAttribute(parentElm, scopeId + '-slot', '');
+          newVNode.vchildren ? 
+          // slot element has fallback content
+          // still create an element that "mocks" the slot element
+          newVNode.isSlotFallback = true : 
+          // slot element does not have fallback content
+          // create an html comment we'll use to always reference
+          // where actual slot content should sit next to
+          newVNode.isSlotReference = true;
         }
-        // this was a slot node, we do not create slot elements, our work here is done
-        // no need to return any element to be added to the dom
-                return null;
       }
-      if (isDef(vnode.vtext)) {
+      if (isDef(newVNode.vtext)) {
         // create text node
-        vnode.elm = domApi.$createTextNode(vnode.vtext);
+        newVNode.elm = domApi.$createTextNode(newVNode.vtext);
+      } else if (true, newVNode.isSlotReference) {
+        // create a slot reference html text node
+        newVNode.elm = domApi.$createTextNode('');
       } else {
         // create element
-        elm = vnode.elm = (true, isSvgMode || 'svg' === vnode.vtag ? domApi.$createElementNS('http://www.w3.org/2000/svg', vnode.vtag) : domApi.$createElement(vnode.vtag));
+        elm = newVNode.elm = (true, isSvgMode || 'svg' === newVNode.vtag ? domApi.$createElementNS('http://www.w3.org/2000/svg', newVNode.vtag) : domApi.$createElement((true, 
+        newVNode.isSlotFallback ? 'slot-fb' : newVNode.vtag)));
         true;
-        isSvgMode = 'svg' === vnode.vtag || 'foreignObject' !== vnode.vtag && isSvgMode;
+        isSvgMode = 'svg' === newVNode.vtag || 'foreignObject' !== newVNode.vtag && isSvgMode;
         // add css classes, attrs, props, listeners, etc.
-        updateElement(plt, null, vnode, isSvgMode);
-        isDef(scopeId) && elm._scopeId !== scopeId && 
+        updateElement(plt, null, newVNode, isSvgMode);
+        isDef(scopeId) && elm['s-si'] !== scopeId && 
         // if there is a scopeId and this is the initial render
         // then let's add the scopeId as an attribute
-        domApi.$setAttribute(elm, elm._scopeId = scopeId, '');
-        const children = vnode.vchildren;
+        domApi.$setAttribute(elm, elm['s-si'] = scopeId, '');
         false;
-        if (children) {
-          for (i = 0; i < children.length; ++i) {
+        if (newVNode.vchildren) {
+          for (i = 0; i < newVNode.vchildren.length; ++i) {
             // create the node
-            childNode = createElm(children[i], elm, i);
+            childNode = createElm(oldParentVNode, newVNode, i, elm);
             // return node could have been null
                         if (childNode) {
               false;
@@ -1168,33 +1193,85 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
             }
           }
         }
-        true;
+        (true, 'svg' === newVNode.vtag) && (
         // Only reset the SVG context when we're exiting SVG element
-        'svg' === vnode.vtag && (isSvgMode = false);
+        isSvgMode = false);
       }
-      return vnode.elm;
+      true;
+      newVNode.elm['s-hn'] = hostTagName;
+      if (newVNode.isSlotFallback || newVNode.isSlotReference) {
+        // remember the content reference comment
+        newVNode.elm['s-sr'] = true;
+        // remember the content reference comment
+                newVNode.elm['s-cr'] = contentRef;
+        // remember the slot name, or empty string for default slot
+                newVNode.elm['s-sn'] = newVNode.vname || '';
+        // check if we've got an old vnode for this slot
+                oldVNode = oldParentVNode && oldParentVNode.vchildren && oldParentVNode.vchildren[childIndex];
+        oldVNode && oldVNode.vtag === newVNode.vtag && oldParentVNode.elm && 
+        // we've got an old slot vnode and the wrapper is being replaced
+        // so let's move the old slot content back to it's original location
+        putBackInOriginalLocation(oldParentVNode.elm);
+      }
+      return newVNode.elm;
     }
-    function addVnodes(parentElm, before, vnodes, startIdx, endIdx, containerElm, childNode, vnodeChild) {
+    function putBackInOriginalLocation(parentElm, recursive, i, childNode) {
+      plt.tmpDisconnected = true;
+      const oldSlotChildNodes = domApi.$childNodes(parentElm);
+      for (i = oldSlotChildNodes.length - 1; i >= 0; i--) {
+        childNode = oldSlotChildNodes[i];
+        if (childNode['s-hn'] !== hostTagName && childNode['s-ol']) {
+          // this child node in the old element is from another component
+          // remove this node from the old slot's parent
+          domApi.$remove(childNode);
+          // and relocate it back to it's original location
+                    domApi.$insertBefore(parentReferenceNode(childNode), childNode, referenceNode(childNode));
+          // remove the old original location comment entirely
+          // later on the patch function will know what to do
+          // and move this to the correct spot in need be
+                    domApi.$remove(childNode['s-ol']);
+          childNode['s-ol'] = null;
+          checkSlotRelocate = true;
+        }
+        recursive && putBackInOriginalLocation(childNode, recursive);
+      }
+      plt.tmpDisconnected = false;
+    }
+    function addVnodes(parentElm, before, parentVNode, vnodes, startIdx, endIdx, containerElm, childNode) {
       // $defaultHolder deprecated 2018-04-02
       const contentRef = parentElm['s-cr'] || parentElm.$defaultHolder;
       containerElm = contentRef && domApi.$parentNode(contentRef) || parentElm;
+      containerElm.shadowRoot && (containerElm = containerElm.shadowRoot);
       for (;startIdx <= endIdx; ++startIdx) {
-        vnodeChild = vnodes[startIdx];
-        if (vnodeChild) {
-          childNode = isDef(vnodeChild.vtext) ? domApi.$createTextNode(vnodeChild.vtext) : createElm(vnodeChild, parentElm, startIdx);
+        if (vnodes[startIdx]) {
+          childNode = isDef(vnodes[startIdx].vtext) ? domApi.$createTextNode(vnodes[startIdx].vtext) : createElm(null, parentVNode, startIdx, parentElm);
           if (childNode) {
-            vnodeChild.elm = childNode;
-            domApi.$insertBefore(containerElm, childNode, before);
+            vnodes[startIdx].elm = childNode;
+            domApi.$insertBefore(containerElm, childNode, referenceNode(before));
           }
         }
       }
     }
-    function removeVnodes(vnodes, startIdx, endIdx) {
+    function removeVnodes(vnodes, startIdx, endIdx, node) {
       for (;startIdx <= endIdx; ++startIdx) {
-        isDef(vnodes[startIdx]) && domApi.$remove(vnodes[startIdx].elm);
+        if (isDef(vnodes[startIdx])) {
+          node = vnodes[startIdx].elm;
+          true;
+          // we're removing this element
+          // so it's possible we need to show slot fallback content now
+          checkSlotFallbackVisibility = true;
+          node['s-ol'] ? 
+          // remove the original location comment
+          domApi.$remove(node['s-ol']) : 
+          // it's possible that child nodes of the node
+          // that's being removed are slot nodes
+          putBackInOriginalLocation(node, true);
+          // remove the vnode's element from the dom
+          domApi.$remove(node);
+        }
       }
     }
-    function updateChildren(parentElm, oldCh, newCh) {
+    function updateChildren(parentElm, oldCh, newVNode, newCh, idxInOld, i, node, elmToMove) {
       let oldStartIdx = 0, newStartIdx = 0;
       let oldEndIdx = oldCh.length - 1;
       let oldStartVnode = oldCh[0];
@@ -1202,10 +1279,6 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       let newEndIdx = newCh.length - 1;
       let newStartVnode = newCh[0];
       let newEndVnode = newCh[newEndIdx];
-      let oldKeyToIdx;
-      let idxInOld;
-      let elmToMove;
-      let node;
       while (oldStartIdx <= oldEndIdx && newStartIdx <= newEndIdx) {
         if (null == oldStartVnode) {
           // Vnode might have been moved left
@@ -1226,23 +1299,31 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
           newEndVnode = newCh[--newEndIdx];
         } else if (isSameVnode(oldStartVnode, newEndVnode)) {
           // Vnode moved right
+          'slot' !== oldStartVnode.vtag && 'slot' !== newEndVnode.vtag || putBackInOriginalLocation(domApi.$parentNode(oldStartVnode.elm));
           patchVNode(oldStartVnode, newEndVnode);
           domApi.$insertBefore(parentElm, oldStartVnode.elm, domApi.$nextSibling(oldEndVnode.elm));
           oldStartVnode = oldCh[++oldStartIdx];
           newEndVnode = newCh[--newEndIdx];
         } else if (isSameVnode(oldEndVnode, newStartVnode)) {
           // Vnode moved left
+          'slot' !== oldStartVnode.vtag && 'slot' !== newEndVnode.vtag || putBackInOriginalLocation(domApi.$parentNode(oldEndVnode.elm));
           patchVNode(oldEndVnode, newStartVnode);
           domApi.$insertBefore(parentElm, oldEndVnode.elm, oldStartVnode.elm);
           oldEndVnode = oldCh[--oldEndIdx];
           newStartVnode = newCh[++newStartIdx];
         } else {
-          isDef(oldKeyToIdx) || (oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx));
-          idxInOld = oldKeyToIdx[newStartVnode.vkey];
+          // createKeyToOldIdx
+          idxInOld = null;
+          for (i = oldStartIdx; i <= oldEndIdx; ++i) {
+            if (oldCh[i] && isDef(oldCh[i].vkey) && oldCh[i].vkey === newStartVnode.vkey) {
+              idxInOld = i;
+              break;
+            }
+          }
           if (isDef(idxInOld)) {
             elmToMove = oldCh[idxInOld];
             if (elmToMove.vtag !== newStartVnode.vtag) {
-              node = createElm(newStartVnode, parentElm, idxInOld);
+              node = createElm(oldCh && oldCh[newStartIdx], newVNode, idxInOld, parentElm);
             } else {
               patchVNode(elmToMove, newStartVnode);
               oldCh[idxInOld] = void 0;
@@ -1251,30 +1332,39 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
             newStartVnode = newCh[++newStartIdx];
           } else {
             // new element
-            node = createElm(newStartVnode, parentElm, newStartIdx);
+            node = createElm(oldCh && oldCh[newStartIdx], newVNode, newStartIdx, parentElm);
             newStartVnode = newCh[++newStartIdx];
           }
-          node && domApi.$insertBefore(oldStartVnode.elm && oldStartVnode.elm.parentNode || parentElm, node, oldStartVnode.elm);
+          node && domApi.$insertBefore(parentReferenceNode(oldStartVnode.elm), node, referenceNode(oldStartVnode.elm));
         }
       }
-      oldStartIdx > oldEndIdx ? addVnodes(parentElm, null == newCh[newEndIdx + 1] ? null : newCh[newEndIdx + 1].elm, newCh, newStartIdx, newEndIdx) : newStartIdx > newEndIdx && removeVnodes(oldCh, oldStartIdx, oldEndIdx);
+      oldStartIdx > oldEndIdx ? addVnodes(parentElm, null == newCh[newEndIdx + 1] ? null : newCh[newEndIdx + 1].elm, newVNode, newCh, newStartIdx, newEndIdx) : newStartIdx > newEndIdx && removeVnodes(oldCh, oldStartIdx, oldEndIdx);
     }
     function isSameVnode(vnode1, vnode2) {
       // compare if two vnode to see if they're "technically" the same
       // need to have the same element tag, and same key to be the same
-      return vnode1.vtag === vnode2.vtag && vnode1.vkey === vnode2.vkey;
-    }
-    function createKeyToOldIdx(children, beginIdx, endIdx) {
-      const map = {};
-      let i, key, ch;
-      for (i = beginIdx; i <= endIdx; ++i) {
-        ch = children[i];
-        if (null != ch) {
-          key = ch.vkey;
-          void 0 !== key && (map.k = i);
+      if (vnode1.vtag === vnode2.vtag && vnode1.vkey === vnode2.vkey) {
+        true;
+        if ('slot' === vnode1.vtag) {
+          return vnode1.vname === vnode2.vname;
         }
+        return true;
       }
-      return map;
+      return false;
+    }
+    function referenceNode(node) {
+      true;
+      if (node && node['s-ol']) {
+        // this node was relocated to a new location in the dom
+        // because of some other component's slot
+        // but we still have an html comment in place of where
+        // it's original location was according to it's original vdom
+        return node['s-ol'];
+      }
+      return node;
+    }
+    function parentReferenceNode(node) {
+      return domApi.$parentNode(node['s-ol'] ? node['s-ol'] : node);
     }
     function patchVNode(oldVNode, newVNode, defaultHolder) {
       const elm = newVNode.elm = oldVNode.elm;
@@ -1301,14 +1391,14 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         updateElement(plt, oldVNode, newVNode, isSvgMode);
         if (isDef(oldChildren) && isDef(newChildren)) {
           // looks like there's child vnodes for both the old and new vnodes
-          updateChildren(elm, oldChildren, newChildren);
+          updateChildren(elm, oldChildren, newVNode, newChildren);
         } else if (isDef(newChildren)) {
           // no old child vnodes, but there are new child vnodes to add
           isDef(oldVNode.vtext) && 
           // the old vnode was text, so be sure to clear it out
           domApi.$setTextContent(elm, '');
           // add the new vnode children
-                    addVnodes(elm, null, newChildren, 0, newChildren.length - 1);
+                    addVnodes(elm, null, newVNode, newChildren, 0, newChildren.length - 1);
         } else {
           isDef(oldChildren) && 
           // no new child vnodes, but there are old child vnodes to remove
@@ -1319,16 +1409,94 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       // reset svgMode when svg node is fully patched
       isSvgMode && 'svg' === newVNode.vtag && (isSvgMode = false);
     }
+    function updateFallbackSlotVisibility(elm, childNode, childNodes, i, ilen, j, slotNameAttr, nodeType) {
+      childNodes = domApi.$childNodes(elm);
+      for (i = 0, ilen = childNodes.length; i < ilen; i++) {
+        childNode = childNodes[i];
+        if (1 /* ElementNode */ === domApi.$nodeType(childNode)) {
+          if (childNode['s-sr']) {
+            // this is a slot fallback node
+            // get the slot name for this slot reference node
+            slotNameAttr = childNode['s-sn'];
+            // by default always show a fallback slot node
+            // then hide it if there are other slots in the light dom
+                        childNode.hidden = false;
+            for (j = 0; j < ilen; j++) {
+              if (childNodes[j]['s-hn'] !== childNode['s-hn']) {
+                // this sibling node is from a different component
+                nodeType = domApi.$nodeType(childNodes[j]);
+                if ('' !== slotNameAttr) {
+                  // this is a named fallback slot node
+                  if (1 /* ElementNode */ === nodeType && slotNameAttr === domApi.$getAttribute(childNodes[j], 'slot')) {
+                    childNode.hidden = true;
+                    break;
+                  }
+                } else 
+                // this is a default fallback slot node
+                // any element or text node (with content)
+                // should hide the default fallback slot node
+                if (1 /* ElementNode */ === nodeType || 3 /* TextNode */ === nodeType && '' !== domApi.$getTextContent(childNodes[j]).trim()) {
+                  childNode.hidden = true;
+                  break;
+                }
+              }
+            }
+          }
+          // keep drilling down
+                    updateFallbackSlotVisibility(childNode);
+        }
+      }
+    }
+    const relocateNodes = [];
+    function relocateSlotContent(elm, childNodes, childNode, node, i, ilen, j, hostContentNodes, slotNameAttr, nodeType) {
+      childNodes = domApi.$childNodes(elm);
+      for (i = 0, ilen = childNodes.length; i < ilen; i++) {
+        childNode = childNodes[i];
+        if (childNode['s-sr'] && (node = childNode['s-cr'])) {
+          // first got the content reference comment node
+          // then we got it's parent, which is where all the host content is in now
+          hostContentNodes = domApi.$childNodes(domApi.$parentNode(node));
+          slotNameAttr = childNode['s-sn'];
+          for (j = hostContentNodes.length - 1; j >= 0; j--) {
+            node = hostContentNodes[j];
+            if (!node['s-cn'] && !node['s-nr'] && node['s-hn'] !== childNode['s-hn']) {
+              // let's do some relocating to its new home
+              // but never relocate a content reference node
+              // that is suppose to always represent the original content location
+              nodeType = domApi.$nodeType(node);
+              if (((3 /* TextNode */ === nodeType || 8 /* CommentNode */ === nodeType) && '' === slotNameAttr || 1 /* ElementNode */ === nodeType && null === domApi.$getAttribute(node, 'slot') && '' === slotNameAttr || 1 /* ElementNode */ === nodeType && domApi.$getAttribute(node, 'slot') === slotNameAttr) && !relocateNodes.some(r => r.nodeToRelocate === node)) {
+                // made some changes to slots
+                // let's make sure we also double check
+                // fallbacks are correctly hidden or shown
+                checkSlotFallbackVisibility = true;
+                node['s-sn'] = slotNameAttr;
+                // add to our list of nodes to relocate
+                                relocateNodes.push({
+                  slotRefNode: childNode,
+                  nodeToRelocate: node
+                });
+              }
+            }
+          }
+        }
+        1 /* ElementNode */ === domApi.$nodeType(childNode) && relocateSlotContent(childNode);
+      }
+    }
     // internal variables to be reused per patch() call
-        let contentSlots, useNativeShadowDom, scopeId;
-    return function patch(oldVNode, newVNode, isUpdate, encapsulation, ssrPatchId) {
+        let useNativeShadowDom, scopeId, isUpdate, checkSlotFallbackVisibility, checkSlotRelocate, hostTagName, contentRef;
+    return function patch(oldVNode, newVNode, isUpdatePatch, encapsulation, ssrPatchId, i, relocateNode, orgLocationNode, refNode) {
+      // patchVNode() is synchronous
+      // so it is safe to set these variables and internally
+      // the same patch() call will reference the same data
+      isUpdate = isUpdatePatch;
+      hostTagName = domApi.$tagName(oldVNode.elm);
+      contentRef = oldVNode.elm['s-cr'];
       false;
       true;
-      // get the host content reference comment node and
-      // collect the host content nodes and shots
-      loadHostContent(domApi, oldVNode.elm['s-cr'], contentSlots = {});
       // get the scopeId
-            scopeId = 'scoped' === encapsulation || 'shadow' === encapsulation && !domApi.$supportsShadowDom ? 'data-' + domApi.$tagName(oldVNode.elm) : null;
+      scopeId = 'scoped' === encapsulation || 'shadow' === encapsulation && !domApi.$supportsShadowDom ? 'data-' + domApi.$tagName(oldVNode.elm) : null;
+      // always reset
+            checkSlotRelocate = checkSlotFallbackVisibility = false;
       false;
       if (!isUpdate) {
         false;
@@ -1340,6 +1508,50 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       // synchronous patch
             patchVNode(oldVNode, newVNode);
       false;
+      true;
+      if (checkSlotRelocate) {
+        relocateSlotContent(newVNode.elm);
+        for (i = 0; i < relocateNodes.length; i++) {
+          relocateNode = relocateNodes[i];
+          if (!relocateNode.nodeToRelocate['s-ol']) {
+            // add a reference node marking this node's original location
+            // keep a reference to this node for later lookups
+            orgLocationNode = domApi.$createTextNode('');
+            orgLocationNode['s-nr'] = relocateNode.nodeToRelocate;
+            domApi.$insertBefore(domApi.$parentNode(relocateNode.nodeToRelocate), relocateNode.nodeToRelocate['s-ol'] = orgLocationNode, relocateNode.nodeToRelocate);
+          }
+        }
+        // while we're moving nodes around existing nodes, temporarily disable
+        // the disconnectCallback from working
+                plt.tmpDisconnected = true;
+        for (i = 0; i < relocateNodes.length; i++) {
+          relocateNode = relocateNodes[i];
+          // by default we're just going to insert it directly
+          // after the slot reference node
+                    const parentNodeRef = domApi.$parentNode(relocateNode.slotRefNode);
+          let insertBeforeNode = domApi.$nextSibling(relocateNode.slotRefNode);
+          orgLocationNode = relocateNode.nodeToRelocate['s-ol'];
+          while (orgLocationNode = domApi.$previousSibling(orgLocationNode)) {
+            refNode = orgLocationNode['s-nr'];
+            if (refNode && refNode['s-sn'] === relocateNode.nodeToRelocate['s-sn'] && parentNodeRef === domApi.$parentNode(refNode)) {
+              insertBeforeNode = domApi.$nextSibling(refNode);
+              break;
+            }
+          }
+          if ((!insertBeforeNode && parentNodeRef !== domApi.$parentNode(relocateNode.nodeToRelocate) || domApi.$nextSibling(relocateNode.nodeToRelocate) !== insertBeforeNode) && relocateNode.nodeToRelocate !== insertBeforeNode) {
+            // remove the node from the dom
+            domApi.$remove(relocateNode.nodeToRelocate);
+            // add it back to the dom but in its new home
+                        domApi.$insertBefore(parentNodeRef, relocateNode.nodeToRelocate, insertBeforeNode);
+          }
+        }
+        // done moving nodes around
+        // allow the disconnect callback to work again
+                plt.tmpDisconnected = false;
+      }
+      checkSlotFallbackVisibility && updateFallbackSlotVisibility(newVNode.elm);
+      // always reset
+            relocateNodes.length = 0;
       // return our new vnode
       return newVNode;
     };
@@ -1494,6 +1706,64 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         }
       }
     };
+  }
+  function initElementListeners(plt, elm) {
+    // so the element was just connected, which means it's in the DOM
+    // however, the component instance hasn't been created yet
+    // but what if an event it should be listening to get emitted right now??
+    // let's add our listeners right now to our element, and if it happens
+    // to receive events between now and the instance being created let's
+    // queue up all of the event data and fire it off on the instance when it's ready
+    const cmpMeta = plt.getComponentMeta(elm);
+    cmpMeta.listenersMeta && 
+    // we've got listens
+    cmpMeta.listenersMeta.forEach(listenMeta => {
+      // go through each listener
+      listenMeta.eventDisabled || 
+      // only add ones that are not already disabled
+      plt.domApi.$addEventListener(elm, listenMeta.eventName, createListenerCallback(plt, elm, listenMeta.eventMethodName), listenMeta.eventCapture, listenMeta.eventPassive);
+    });
+  }
+  function createListenerCallback(plt, elm, eventMethodName, val) {
+    // create the function that gets called when the element receives
+    // an event which it should be listening for
+    return ev => {
+      // get the instance if it exists
+      val = plt.instanceMap.get(elm);
+      if (val) {
+        // instance is ready, let's call it's member method for this event
+        val[eventMethodName](ev);
+      } else {
+        // instance is not ready!!
+        // let's queue up this event data and replay it later
+        // when the instance is ready
+        val = plt.queuedEvents.get(elm) || [];
+        val.push(eventMethodName, ev);
+        plt.queuedEvents.set(elm, val);
+      }
+    };
+  }
+  function enableEventListener(plt, instance, eventName, shouldEnable, attachTo, passive) {
+    if (instance) {
+      // cool, we've got an instance, it's get the element it's on
+      const elm = plt.hostElementMap.get(instance);
+      const cmpMeta = plt.getComponentMeta(elm);
+      if (cmpMeta && cmpMeta.listenersMeta) {
+        // alrighty, so this cmp has listener meta
+        if (shouldEnable) {
+          // we want to enable this event
+          // find which listen meta we're talking about
+          const listenMeta = cmpMeta.listenersMeta.find(l => l.eventName === eventName);
+          listenMeta && 
+          // found the listen meta, so let's add the listener
+          plt.domApi.$addEventListener(elm, eventName, ev => instance[listenMeta.eventMethodName](ev), listenMeta.eventCapture, void 0 === passive ? listenMeta.eventPassive : !!passive, attachTo);
+        } else {
+          // we're disabling the event listener
+          // so let's just remove it entirely
+          plt.domApi.$removeEventListener(elm, eventName);
+        }
+      }
+    }
   }
   function generateDevInspector(App, namespace, win, plt) {
     const devInspector = win.devInspector = win.devInspector || {};
@@ -1681,19 +1951,19 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       // only required when we're NOT using native shadow dom (slot)
       // this host element was NOT created with SSR
       // let's pick out the inner content for slot projection
-      // create a comment to represent where the original
+      // create a node to represent where the original
       // content was first placed, which is useful later on
-      domApi.$insertBefore(elm, elm['s-cr'] = domApi.$createComment(''), domApi.$childNodes(elm)[0]);
-      true;
-      // only add this extra data in dev mode
-      elm['s-cr']['s-host-id'] = elm['s-id'];
-      elm['s-cr']['s-host-tag'] = elm.tagName.toLowerCase();
+      elm['s-cr'] = domApi.$createTextNode('');
+      elm['s-cr']['s-cn'] = true;
+      domApi.$insertBefore(elm, elm['s-cr'], domApi.$childNodes(elm)[0]);
     }
-    domApi.$supportsShadowDom || 1 /* ShadowDom */ !== cmpMeta.encapsulation || (
-    // this component should use shadow dom
-    // but this browser doesn't support it
-    // so let's polyfill a few things for the user
-    elm.shadowRoot = elm);
+    if (!domApi.$supportsShadowDom && 1 /* ShadowDom */ === cmpMeta.encapsulation) {
+      true, true;
+      // it's possible we're manually forcing the slot polyfill
+      // but this browser may already support the read-only shadowRoot
+      // do an extra check here, but only for dev mode on the client
+      'shadowRoot' in HTMLElement.prototype || (elm.shadowRoot = elm);
+    }
     hostSnapshot = {
       $id: elm['s-id'],
       $attributes: {}
@@ -1704,7 +1974,17 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     return hostSnapshot;
   }
   function connectedCallback(plt, cmpMeta, elm) {
-    false;
+    true;
+    // initialize our event listeners on the host element
+    // we do this now so that we can listening to events that may
+    // have fired even before the instance is ready
+    if (!plt.hasListenersMap.has(elm)) {
+      // it's possible we've already connected
+      // then disconnected
+      // and the same element is reconnected again
+      plt.hasListenersMap.set(elm, true);
+      initElementListeners(plt, elm);
+    }
     // this element just connected, which may be re-connecting
     // ensure we remove it from our map of disconnected
     plt.isDisconnectedMap.delete(elm);
@@ -1797,7 +2077,8 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     false;
     membersMeta && Object.keys(membersMeta).forEach(memberName => {
       // add getters/setters
-      const memberType = membersMeta[memberName].memberType;
+      const member = membersMeta[memberName];
+      const memberType = member.memberType;
       1 /* Prop */ === memberType || 2 /* PropMutable */ === memberType ? 
       // @Prop() or @Prop({ mutable: true })
       definePropertyGetterSetter(hostPrototype, memberName, function getHostElementProp() {
@@ -1806,7 +2087,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         return (plt.valuesMap.get(this) || {})[memberName];
       }, function setHostElementProp(newValue) {
         // host element setter (cannot be arrow fn)
-        setValue(plt, this, memberName, newValue);
+        setValue(plt, this, memberName, parsePropertyValue(member.propType, newValue));
       }) : 6 /* Method */ === memberType && 
       // @Method()
       // add a placeholder noop value on the host element's prototype
@@ -1866,7 +2147,7 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
       ctrlElm.componentOnReady(resolve);
     });
   }
-  function createPlatformMain(namespace, Context, win, doc, resourcesUrl, hydratedCssClass) {
+  function createPlatformMain(namespace, Context, win, doc, resourcesUrl, hydratedCssClass, customStyle) {
     const cmpRegistry = {
       'html': {}
     };
@@ -1879,8 +2160,10 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
     Context.location = win.location;
     Context.document = doc;
     Context.resourcesUrl = Context.publicPath = resourcesUrl;
-    false;
-    false;
+    true;
+    Context.enableListener = ((instance, eventName, enabled, attachTo, passive) => enableEventListener(plt, instance, eventName, enabled, attachTo, passive));
+    true;
+    Context.emit = ((elm, eventName, data) => domApi.$dispatchEvent(elm, Context.eventNameFn ? Context.eventNameFn(eventName) : eventName, data));
     // add the h() fn to the app's global namespace
     App.h = h;
     App.Context = Context;
@@ -1933,19 +2216,23 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         }
       });
     });
+    true;
     // if the HTML was generated from SSR
     // then let's walk the tree and generate vnodes out of the data
-        createVNodesFromSsr(plt, domApi, rootElm);
+    createVNodesFromSsr(plt, domApi, rootElm);
+    false;
     function defineComponent(cmpMeta, HostElementConstructor) {
       if (!globalDefined[cmpMeta.tagNameMeta]) {
         // keep a map of all the defined components
         globalDefined[cmpMeta.tagNameMeta] = true;
+        // define the custom element
         // initialize the members on the host element prototype
-                initHostElement(plt, cmpMeta, HostElementConstructor.prototype, hydratedCssClass);
+        // keep a ref to the metadata with the tag as the key
+                initHostElement(plt, cmpRegistry[cmpMeta.tagNameMeta] = cmpMeta, HostElementConstructor.prototype, hydratedCssClass);
         true;
         {
           // add which attributes should be observed
-          const observedAttributes = [];
+          const observedAttributes = HostElementConstructor.observedAttributes = [];
           // at this point the membersMeta only includes attributes which should
           // be observed, it does not include all props yet, so it's safe to
           // loop through all of the props (attrs) and observed them
@@ -1954,12 +2241,8 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
             // add this attribute to our array of attributes we need to observe
             cmpMeta.membersMeta[propName].attribName);
           }
-          // set the array of all the attributes to keep an eye on
-          // https://www.youtube.com/watch?v=RBs21CFBALI
-                    HostElementConstructor.observedAttributes = observedAttributes;
         }
-        // define the custom element
-                win.customElements.define(cmpMeta.tagNameMeta, HostElementConstructor);
+        win.customElements.define(cmpMeta.tagNameMeta, HostElementConstructor);
       }
     }
     function requestBundle(cmpMeta, elm) {
@@ -1975,47 +2258,54 @@ s=document.querySelector("script[data-namespace='app']");if(s){resourcesUrl=s.ge
         // we're already all loaded up :)
         queueUpdate(plt, elm);
       } else {
-        const bundleId = 'string' === typeof cmpMeta.bundleIds ? cmpMeta.bundleIds : cmpMeta.bundleIds[elm.mode];
-        const url = resourcesUrl + bundleId + (useScopedCss(domApi.$supportsShadowDom, cmpMeta) ? '.sc' : '') + '.js';
-        // dynamic es module import() => woot!
-                import(url).then(importedModule => {
-          // async loading of the module is done
-          try {
-            // get the component constructor from the module
-            cmpMeta.componentConstructor = importedModule[dashToPascalCase(cmpMeta.tagNameMeta)];
-            // initialize this component constructor's styles
-            // it is possible for the same component to have difficult styles applied in the same app
-                        initStyleTemplate(domApi, cmpMeta, cmpMeta.componentConstructor);
-          } catch (e) {
-            // oh man, something's up
-            console.error(e);
-            // provide a bogus component constructor
-            // so the rest of the app acts as normal
-                        cmpMeta.componentConstructor = class {};
-          }
-          // bundle all loaded up, let's continue
-                    queueUpdate(plt, elm);
-        }).catch(err => console.error(err, url));
+        false;
+        true;
+        {
+          // self loading module using built-in browser's import()
+          // this is when not using a 3rd party bundler
+          // and components are able to lazy load themselves
+          // through standardized browser APIs
+          const bundleId = 'string' === typeof cmpMeta.bundleIds ? cmpMeta.bundleIds : cmpMeta.bundleIds[elm.mode];
+          const url = resourcesUrl + bundleId + (useScopedCss(domApi.$supportsShadowDom, cmpMeta) ? '.sc' : '') + '.js';
+          // dynamic es module import() => woot!
+                    import(url).then(importedModule => {
+            // async loading of the module is done
+            try {
+              // get the component constructor from the module
+              // initialize this component constructor's styles
+              // it is possible for the same component to have difficult styles applied in the same app
+              initStyleTemplate(domApi, cmpMeta, cmpMeta.componentConstructor = importedModule[dashToPascalCase(cmpMeta.tagNameMeta)]);
+            } catch (e) {
+              // oh man, something's up
+              console.error(e);
+              // provide a bogus component constructor
+              // so the rest of the app acts as normal
+                            cmpMeta.componentConstructor = class {};
+            }
+            // bundle all loaded up, let's continue
+                        queueUpdate(plt, elm);
+          }).catch(err => console.error(err, url));
+        }
       }
     }
     true;
-    plt.attachStyles = attachStyles;
+    plt.attachStyles = ((plt, domApi, cmpMeta, modeName, elm) => {
+      attachStyles(plt, domApi, cmpMeta, modeName, elm, customStyle);
+    });
     true;
-    generateDevInspector(App, namespace, window, plt);
+    generateDevInspector(App, namespace, win, plt);
+    true;
     // register all the components now that everything's ready
-    // standard es2015 class extends HTMLElement
-    (App.components || []).map(data => parseComponentLoader(data, cmpRegistry)).forEach(cmpMeta => plt.defineComponent(cmpMeta, class extends HTMLElement {}));
+    // standard es2017 class extends HTMLElement
+    (App.components || []).map(data => parseComponentLoader(data)).forEach(cmpMeta => defineComponent(cmpMeta, class extends HTMLElement {}));
     // create the componentOnReady fn
-        initCoreComponentOnReady(plt, App);
+    initCoreComponentOnReady(plt, App);
     // notify that the app has initialized and the core script is ready
     // but note that the components have not fully loaded yet
         App.initialized = true;
+    return plt;
   }
-  /*
-    Extremely simple css parser. Intended to be not more than what we need
-    and definitely not necessarily correct =).
-    */
-  /* tslint:disable */  false;
+  false;
   // esm build which uses es module imports and dynamic imports
   createPlatformMain(namespace, Context, window, document, resourcesUrl, hydratedCssClass);
 })(window, document, Context, namespace);
